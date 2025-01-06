@@ -1,0 +1,18 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+    depends_on:
+      - db  # Make sure the web service depends on the db service
+
+  db:
+    image: postgres:15  # Use PostgreSQL 15
+    environment:
+      POSTGRES_USER: user  # Set the database username
+      POSTGRES_PASSWORD: password  # Set the database password
+      POSTGRES_DB: cancer_data  # Name the database
+    ports:
+      - "5432:5432"  # Expose the default PostgreSQL port
