@@ -1,11 +1,8 @@
-from flask import Flask, render_template, redirect, url_for, request
+from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-import os
-import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
 from sklearn.cluster import KMeans
-import numpy as np
+import os
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -63,8 +60,9 @@ def import_patient_data(csv_file):
         db.session.add(patient_data)
     db.session.commit()
 
-# Function to create the plot
-def create_plot():
+# API endpoint to fetch top genes data
+@app.route("/api/top_genes")
+def get_top_genes():
     # Query data from the Variant table
     top_gene = (
         db.session.query(Variant.gene, db.func.count(Variant.id).label('ct'))
@@ -72,92 +70,57 @@ def create_plot():
         .having(db.func.count(Variant.id) > 40)
         .all()
     )
-    # Convert query results to DataFrame
-    top_gene_df = pd.DataFrame(top_gene, columns=['Gene', 'ct'])
+    # Convert query results to a list of dictionaries
+    top_gene_data = [{"gene": gene, "count": count} for gene, count in top_gene]
+    return jsonify(top_gene_data)
 
-    # Create plot
-    plt.figure(figsize=(10, 6))
-    sns.scatterplot(
-        data=top_gene_df,
-        x='ct',
-        y=top_gene_df['Gene'].str.strip(),
-        size=4,
-        legend=False,
-    )
-    plt.xlabel("Frequency")
-    plt.ylabel("Gene")
-    plt.title("Gene with the Most Variants")
-    plt.grid(axis='x', linestyle='--', alpha=0.7)
-    plt.tight_layout()
+# API endpoint to fetch patient data
+@app.route("/api/patient_data")
+def get_patient_data():
+    # Fetch the data from the database
+    patient_data = PatientData.query.all()
+    # Convert data to a list of dictionaries
+    patient_data_json = [{"msi": p.msi, "sv": p.sv, "cluster": p.data_type} for p in patient_data]
+    return jsonify(patient_data_json)
 
-    # Save plot
-    plot_path = os.path.join('static', 'plot.png')
-    plt.savefig(plot_path)
-    plt.close()
-    return plot_path
+# API endpoint to predict cluster
+@app.route("/api/predict_cluster", methods=["POST"])
+def predict_cluster_api():
+    data = request.json
+    msi = data.get('msi')
+    sv = data.get('sv')
 
+    if msi is None or sv is None:
+        return jsonify({"error": "Missing MSI or SV value"}), 400
+
+    # Get the current predefined clusters (data_type) from the database
+    patient_data = PatientData.query.all()
+    known_data = pd.DataFrame([(p.msi, p.sv, p.data_type) for p in patient_data], columns=['MSI', 'SV', 'Cluster'])
+
+    # Train a KMeans model on the known data
+    kmeans = KMeans(n_clusters=3, random_state=42)
+    kmeans.fit(known_data[['MSI', 'SV']])
+
+    # Predict the cluster for the user-provided data
+    prediction = kmeans.predict([[msi, sv]])[0]
+    return jsonify({"predicted_cluster": int(prediction)})
+
+# Route for landing page
 @app.route("/")
 def landing_page():
     return render_template("landing_page.html")
 
+# Route to show the interactive gene variants plot
 @app.route("/show_plot")
 def show_plot():
-    plot_path = create_plot()
-    return render_template("show_plot.html", plot_url=plot_path)
+    return render_template("show_plot.html")
 
+# Route to show the interactive clustering plot
 @app.route("/clustering")
 def clustering():
-    # Fetch the data from the database
-    patient_data = PatientData.query.all()
-    
-    # Convert data to DataFrame
-    data = pd.DataFrame([(p.msi, p.sv, p.data_type) for p in patient_data], columns=['MSI', 'SV', 'Cluster'])
-
-    # Create a plot of the predefined clusters (grouped by data_type)
-    plt.figure(figsize=(10, 6))
-    sns.scatterplot(data=data, x='SV', y='MSI', hue='Cluster', palette='viridis', s=100)
-    plt.title('Predefined Clustering of Patients')
-    plt.xlabel('SV')  # X-axis is SV
-    plt.ylabel('MSI')  # Y-axis is MSI
-    plt.grid(True)
-    plt.tight_layout()
-
-    # Save the plot
-    plot_path = os.path.join('static', 'clustering_plot.png')
-    plt.savefig(plot_path)
-    plt.close()
-
-    return render_template("clustering.html", plot_url=plot_path)
-
-@app.route("/predict", methods=["GET", "POST"])
-def predict_cluster():
-    predicted_cluster = None
-    msi = None
-    sv = None
-
-    if request.method == "POST":
-        # Get MSI and SV from the form
-        msi = float(request.form['msi'])
-        sv = float(request.form['sv'])
-        
-        # Get the current predefined clusters (data_type) from the database
-        patient_data = PatientData.query.all()
-        known_data = pd.DataFrame([(p.msi, p.sv, p.data_type) for p in patient_data], columns=['MSI', 'SV', 'Cluster'])
-
-        # Train a KMeans model on the known data
-        kmeans = KMeans(n_clusters=3, random_state=42)
-        kmeans.fit(known_data[['MSI', 'SV']])
-
-        # Predict the cluster for the user-provided data
-        prediction = kmeans.predict([[msi, sv]])[0]
-        
-        # Map the predicted cluster to the corresponding data_type
-        predicted_cluster = prediction
-
-    # Return the results to the template
-    return render_template("predict.html", predicted_cluster=predicted_cluster, msi=msi, sv=sv)
+    return render_template("clustering.html")
 
 # Initialize the database before running the app
 if __name__ == "__main__":
     initialize_database()  # Initialize the database and load data
-    app.run(debug=True)
+    app.run(host="0.0.0.0", debug=True)
