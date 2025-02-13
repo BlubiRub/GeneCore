@@ -44,7 +44,17 @@ Before starting, ensure you have the following installed on your system:
    docker run -p 5000:5000 genecore
    ```
 
-5. **Access the Application**\
+5. **Initiate DB creation**\
+   Upon launching the application, the tables within the Database won't be created correctly. Run these steps within Container `genecore-web` manually to fix it.:
+
+   ```
+   python3
+   from app import *
+   with app.app_context():
+      initialize_database()
+   ```
+
+6. **Access the Application**\
    Open your web browser and go to:
 
    ```
