@@ -1,7 +1,8 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
+from flask_admin.menu import MenuLink
 from sklearn.cluster import KMeans
 import pandas as pd
 
@@ -82,6 +83,7 @@ admin = Admin(app, name='Admin Panel', template_mode='bootstrap4')
 admin.add_view(ModelView(PatientData, db.session))
 admin.add_view(ModelView(VariantDetails, db.session))
 admin.add_view(ModelView(Variant, db.session))
+admin.add_link(MenuLink(name="Back to Home", category="", url="/"))
 
 # Route for landing page
 @app.route("/")
@@ -131,22 +133,29 @@ def predict_cluster_api():
     ], columns=['MSI', 'SV', 'Cluster'])
 
     # Train KMeans model
-    kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
-    kmeans.fit(known_data[['MSI', 'SV']])
+    kmeans = KMeans(n_clusters=2, random_state=42, n_init=10)
+    known_data['Predicted'] = kmeans.fit_predict(known_data[['MSI', 'SV']])
 
-    # Predict cluster
-    predicted_cluster = int(kmeans.predict([[msi, sv]])[0])
+    # Map KMeans labels to actual clusters
+    cluster_mapping = {}
+    for kmeans_label in range(2):
+        most_common_actual = known_data[known_data['Predicted'] == kmeans_label]['Cluster'].mode()[0]
+        cluster_mapping[kmeans_label] = most_common_actual
 
-    # Retrieve cluster name & treatment option
-    variant = VariantDetails.query.filter_by(id=predicted_cluster).first()
+    # Predict the cluster
+    kmeans_cluster = int(kmeans.predict([[msi, sv]])[0])
+    predicted_cluster = cluster_mapping[kmeans_cluster]  # Ensure correct mapping
+
+    variant = VariantDetails.query.filter_by(id=int(predicted_cluster)).first()
     cluster_name = variant.name if variant else "Unknown"
     treatment_option = variant.resolution if variant else "N/A"
 
     return jsonify({
-        "predicted_cluster": predicted_cluster,
+        "predicted_cluster": int(predicted_cluster),
         "predicted_cluster_name": cluster_name,
         "treatment_option": treatment_option
     })
+
 
 # Initialize the database before running the app
 if __name__ == "__main__":
