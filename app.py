@@ -69,8 +69,8 @@ def import_patient_data(csv_file):
     data = pd.read_csv(csv_file)
     for _, row in data.iterrows():
         patient_data = PatientData(
-            msi=float(row['MSI']),  # Explicitly convert np.float64 to Python float
-            sv=float(row['SV']),    # Explicitly convert np.float64 to Python float
+            msi=float(row['Anzahl Mikrosatelitenmutationen (MSI)']),  # Explicitly convert np.float64 to Python float
+            sv=float(row['Anzahl struktureller Variationen(SV)']),    # Explicitly convert np.float64 to Python float
             data_type=int(row['Type'])  # Ensure data_type is an integer
         )
         db.session.add(patient_data)
